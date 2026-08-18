@@ -1,1 +1,777 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
 
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+  />
+
+  <title>Breakout Rush</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #111;
+      touch-action: none;
+    }
+
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    #gameCanvas {
+      display: block;
+
+      width: min(100vw, calc(100vh * 9 / 16));
+      height: min(100vh, calc(100vw * 16 / 9));
+
+      background: linear-gradient(
+        180deg,
+        #16213e 0%,
+        #0f3460 45%,
+        #111827 100%
+      );
+
+      touch-action: none;
+    }
+  </style>
+</head>
+
+<body>
+
+<canvas
+  id="gameCanvas"
+  width="720"
+  height="1280"
+></canvas>
+
+<script>
+/* =========================================================
+   Canvas
+========================================================= */
+
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+const GAME_WIDTH = 720;
+const GAME_HEIGHT = 1280;
+
+
+/* =========================================================
+   Assets
+========================================================= */
+
+const assets = {};
+
+function loadImage(name, src) {
+  return new Promise((resolve, reject) => {
+
+    const img = new Image();
+
+    img.onload = () => {
+      assets[name] = img;
+      resolve();
+    };
+
+    img.onerror = reject;
+
+    img.src = src;
+  });
+}
+
+
+Promise.all([
+
+  loadImage(
+    "ball",
+    "art/normal_ball.png"
+  ),
+
+  loadImage(
+    "paddle",
+    "art/character.png"
+  ),
+
+  loadImage(
+    "red",
+    "art/red.png"
+  ),
+
+  loadImage(
+    "yellow",
+    "art/yellow.png"
+  ),
+
+  loadImage(
+    "green",
+    "art/green.png"
+  ),
+
+  loadImage(
+    "blue",
+    "art/blue.png"
+  ),
+
+  loadImage(
+    "purple",
+    "art/purple.png"
+  )
+
+]).then(() => {
+
+  initGame();
+
+});
+
+
+/* =========================================================
+   Game State
+========================================================= */
+
+let running = false;
+
+let score = 0;
+
+
+/* =========================================================
+   Ball
+========================================================= */
+
+const ball = {
+
+  x: GAME_WIDTH / 2 - 16,
+  y: 920,
+
+  width: 32,
+  height: 32,
+
+  vx: 4,
+  vy: -7
+
+};
+
+
+/* =========================================================
+   Paddle
+========================================================= */
+
+const paddle = {
+
+  width: 160,
+  height: 32,
+
+  x: GAME_WIDTH / 2 - 80,
+  y: 1160
+
+};
+
+
+/* =========================================================
+   Bricks
+========================================================= */
+
+const BRICK_WIDTH = 112;
+const BRICK_HEIGHT = 48;
+
+const BRICK_GAP_X = 12;
+const BRICK_GAP_Y = 14;
+
+const BRICK_COLUMNS = 5;
+const BRICK_ROWS = 4;
+
+const BRICK_START_Y = 170;
+
+const totalBrickWidth =
+  BRICK_COLUMNS * BRICK_WIDTH +
+  (BRICK_COLUMNS - 1) * BRICK_GAP_X;
+
+const BRICK_START_X =
+  (GAME_WIDTH - totalBrickWidth) / 2;
+
+
+const brickTypes = [
+  "red",
+  "yellow",
+  "green",
+  "blue",
+  "purple"
+];
+
+let bricks = [];
+
+
+/* =========================================================
+   Create Bricks
+========================================================= */
+
+function createBricks() {
+
+  bricks = [];
+
+  for (
+    let row = 0;
+    row < BRICK_ROWS;
+    row++
+  ) {
+
+    for (
+      let col = 0;
+      col < BRICK_COLUMNS;
+      col++
+    ) {
+
+      bricks.push({
+
+        x:
+          BRICK_START_X +
+          col * (
+            BRICK_WIDTH +
+            BRICK_GAP_X
+          ),
+
+        y:
+          BRICK_START_Y +
+          row * (
+            BRICK_HEIGHT +
+            BRICK_GAP_Y
+          ),
+
+        width: BRICK_WIDTH,
+        height: BRICK_HEIGHT,
+
+        type:
+          brickTypes[
+            (row + col) %
+            brickTypes.length
+          ],
+
+        active: true
+
+      });
+
+    }
+
+  }
+
+}
+
+
+/* =========================================================
+   Init
+========================================================= */
+
+function initGame() {
+
+  score = 0;
+
+  createBricks();
+
+  resetBall();
+
+  paddle.x =
+    GAME_WIDTH / 2 -
+    paddle.width / 2;
+
+  running = true;
+
+  requestAnimationFrame(gameLoop);
+
+}
+
+
+/* =========================================================
+   Reset Ball
+========================================================= */
+
+function resetBall() {
+
+  ball.x =
+    GAME_WIDTH / 2 -
+    ball.width / 2;
+
+  ball.y = 900;
+
+  ball.vx =
+    Math.random() > 0.5
+      ? 4
+      : -4;
+
+  ball.vy = -7;
+
+}
+
+
+/* =========================================================
+   Main Loop
+========================================================= */
+
+function gameLoop() {
+
+  if (!running) {
+    return;
+  }
+
+  update();
+
+  draw();
+
+  requestAnimationFrame(gameLoop);
+
+}
+
+
+/* =========================================================
+   Update
+========================================================= */
+
+function update() {
+
+  ball.x += ball.vx;
+  ball.y += ball.vy;
+
+
+  /* -----------------------------------------
+     Wall Collision
+  ----------------------------------------- */
+
+  if (ball.x <= 0) {
+
+    ball.x = 0;
+
+    ball.vx *= -1;
+
+  }
+
+
+  if (
+    ball.x +
+    ball.width >=
+    GAME_WIDTH
+  ) {
+
+    ball.x =
+      GAME_WIDTH -
+      ball.width;
+
+    ball.vx *= -1;
+
+  }
+
+
+  if (ball.y <= 0) {
+
+    ball.y = 0;
+
+    ball.vy *= -1;
+
+  }
+
+
+  /* -----------------------------------------
+     Paddle Collision
+  ----------------------------------------- */
+
+  if (
+    ball.vy > 0 &&
+    ball.x + ball.width > paddle.x &&
+    ball.x < paddle.x + paddle.width &&
+    ball.y + ball.height > paddle.y &&
+    ball.y < paddle.y + paddle.height
+  ) {
+
+    ball.y =
+      paddle.y -
+      ball.height;
+
+    ball.vy =
+      -Math.abs(ball.vy);
+
+
+    /*
+
+    依照球撞擊擋板的位置
+    改變左右方向
+
+    */
+
+    const ballCenter =
+      ball.x +
+      ball.width / 2;
+
+    const paddleCenter =
+      paddle.x +
+      paddle.width / 2;
+
+    const hitPosition =
+      (
+        ballCenter -
+        paddleCenter
+      ) /
+      (
+        paddle.width / 2
+      );
+
+
+    ball.vx =
+      hitPosition * 7;
+
+  }
+
+
+  /* -----------------------------------------
+     Brick Collision
+  ----------------------------------------- */
+
+  for (const brick of bricks) {
+
+    if (!brick.active) {
+      continue;
+    }
+
+
+    if (
+      ball.x + ball.width > brick.x &&
+      ball.x < brick.x + brick.width &&
+      ball.y + ball.height > brick.y &&
+      ball.y < brick.y + brick.height
+    ) {
+
+      brick.active = false;
+
+      score += 100;
+
+      ball.vy *= -1;
+
+      break;
+
+    }
+
+  }
+
+
+  /* -----------------------------------------
+     Ball Lost
+  ----------------------------------------- */
+
+  if (
+    ball.y >
+    GAME_HEIGHT
+  ) {
+
+    resetBall();
+
+  }
+
+
+  /* -----------------------------------------
+     Clear
+  ----------------------------------------- */
+
+  const remainingBricks =
+    bricks.filter(
+      brick => brick.active
+    );
+
+
+  if (
+    remainingBricks.length === 0
+  ) {
+
+    createBricks();
+
+    resetBall();
+
+  }
+
+}
+
+
+/* =========================================================
+   Draw
+========================================================= */
+
+function draw() {
+
+  ctx.clearRect(
+    0,
+    0,
+    GAME_WIDTH,
+    GAME_HEIGHT
+  );
+
+
+  drawBackground();
+
+  drawScore();
+
+  drawBricks();
+
+  drawBall();
+
+  drawPaddle();
+
+}
+
+
+/* =========================================================
+   Background
+========================================================= */
+
+function drawBackground() {
+
+  const gradient =
+    ctx.createLinearGradient(
+      0,
+      0,
+      0,
+      GAME_HEIGHT
+    );
+
+
+  gradient.addColorStop(
+    0,
+    "#182848"
+  );
+
+  gradient.addColorStop(
+    0.5,
+    "#203a64"
+  );
+
+  gradient.addColorStop(
+    1,
+    "#101827"
+  );
+
+
+  ctx.fillStyle = gradient;
+
+  ctx.fillRect(
+    0,
+    0,
+    GAME_WIDTH,
+    GAME_HEIGHT
+  );
+
+}
+
+
+/* =========================================================
+   Score
+========================================================= */
+
+function drawScore() {
+
+  ctx.fillStyle =
+    "rgba(255,255,255,0.9)";
+
+  ctx.font =
+    "bold 28px Arial";
+
+  ctx.textAlign =
+    "center";
+
+  ctx.fillText(
+    `SCORE ${score}`,
+    GAME_WIDTH / 2,
+    70
+  );
+
+}
+
+
+/* =========================================================
+   Draw Bricks
+========================================================= */
+
+function drawBricks() {
+
+  for (const brick of bricks) {
+
+    if (!brick.active) {
+      continue;
+    }
+
+
+    const img =
+      assets[brick.type];
+
+
+    ctx.drawImage(
+      img,
+
+      brick.x,
+      brick.y,
+
+      brick.width,
+      brick.height
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   Draw Ball
+========================================================= */
+
+function drawBall() {
+
+  ctx.drawImage(
+    assets.ball,
+
+    ball.x,
+    ball.y,
+
+    ball.width,
+    ball.height
+  );
+
+}
+
+
+/* =========================================================
+   Draw Paddle
+========================================================= */
+
+function drawPaddle() {
+
+  ctx.drawImage(
+    assets.paddle,
+
+    paddle.x,
+    paddle.y,
+
+    paddle.width,
+    paddle.height
+  );
+
+}
+
+
+/* =========================================================
+   Pointer Input
+========================================================= */
+
+function getCanvasX(clientX) {
+
+  const rect =
+    canvas.getBoundingClientRect();
+
+  const scaleX =
+    GAME_WIDTH /
+    rect.width;
+
+  return (
+    clientX -
+    rect.left
+  ) * scaleX;
+
+}
+
+
+/* Mouse */
+
+canvas.addEventListener(
+  "mousemove",
+  (event) => {
+
+    movePaddle(
+      getCanvasX(
+        event.clientX
+      )
+    );
+
+  }
+);
+
+
+/* Touch / Pointer */
+
+canvas.addEventListener(
+  "pointermove",
+  (event) => {
+
+    if (
+      event.pointerType === "touch" ||
+      event.buttons === 1
+    ) {
+
+      movePaddle(
+        getCanvasX(
+          event.clientX
+        )
+      );
+
+    }
+
+  }
+);
+
+
+canvas.addEventListener(
+  "pointerdown",
+  (event) => {
+
+    movePaddle(
+      getCanvasX(
+        event.clientX
+      )
+    );
+
+  }
+);
+
+
+/* =========================================================
+   Move Paddle
+========================================================= */
+
+function movePaddle(x) {
+
+  paddle.x =
+    x -
+    paddle.width / 2;
+
+
+  if (
+    paddle.x < 0
+  ) {
+
+    paddle.x = 0;
+
+  }
+
+
+  if (
+    paddle.x +
+    paddle.width >
+    GAME_WIDTH
+  ) {
+
+    paddle.x =
+      GAME_WIDTH -
+      paddle.width;
+
+  }
+
+}
+
+</script>
+
+</body>
+</html>
