@@ -22,7 +22,7 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: #222;
+      background: #000;
       touch-action: none;
     }
 
@@ -38,7 +38,7 @@
       width: min(100vw, calc(100vh * 9 / 16));
       height: min(100vh, calc(100vw * 16 / 9));
 
-      background: #111827;
+      background: #050914;
 
       touch-action: none;
       user-select: none;
@@ -73,15 +73,24 @@ const GAME_HEIGHT = 1280;
 ========================================================= */
 
 /*
-  0 ~ 1119
   遊戲區
+  Y = 0 ~ 1119
 
-  1120 ~ 1279
-  手指操作區
+  手指控制區
+  Y = 1120 ~ 1279
 */
 
 const CONTROL_ZONE_Y = 1120;
 const CONTROL_ZONE_HEIGHT = 160;
+
+
+/*
+  BG 原圖的遊戲區 / 控制區分界比例。
+
+  目前 art/BG/BG.png
+  原圖的金屬分隔位置約在高度 79%。
+*/
+const BG_SOURCE_SPLIT_RATIO = 0.7895;
 
 
 /* =========================================================
@@ -105,7 +114,15 @@ function loadImage(name, src) {
 
     };
 
-    img.onerror = reject;
+    img.onerror = () => {
+
+      reject(
+        new Error(
+          `無法載入素材：${src}`
+        )
+      );
+
+    };
 
     img.src = src;
 
@@ -119,6 +136,11 @@ function loadImage(name, src) {
 ========================================================= */
 
 Promise.all([
+
+  loadImage(
+    "bg",
+    "art/BG/BG.png"
+  ),
 
   loadImage(
     "ball",
@@ -165,10 +187,9 @@ Promise.all([
 
 .catch((error) => {
 
-  console.error(
-    "素材載入失敗：",
-    error
-  );
+  console.error(error);
+
+  drawLoadError();
 
 });
 
@@ -180,6 +201,8 @@ Promise.all([
 let running = false;
 
 let score = 0;
+
+let lastTime = 0;
 
 
 /* =========================================================
@@ -197,10 +220,18 @@ const ball = {
 
   y: 900,
 
-  vx: 4,
-  vy: -7
+  vx: 220,
+  vy: -390
 
 };
+
+
+/*
+  球基本速度
+  px / 秒
+*/
+
+const BALL_SPEED = 450;
 
 
 /* =========================================================
@@ -217,9 +248,8 @@ const paddle = {
     80,
 
   /*
-    擋板位於操作區上方
+    控制區上方
   */
-
   y: 1060
 
 };
@@ -241,9 +271,14 @@ const BRICK_ROWS = 4;
 const BRICK_START_Y = 170;
 
 
-/*
-  計算整排磚塊寬度
-*/
+const brickTypes = [
+  "red",
+  "yellow",
+  "green",
+  "blue",
+  "purple"
+];
+
 
 const totalBrickWidth =
 
@@ -258,31 +293,12 @@ const totalBrickWidth =
   BRICK_GAP_X;
 
 
-/*
-  水平置中
-*/
-
 const BRICK_START_X =
 
   (
     GAME_WIDTH -
     totalBrickWidth
   ) / 2;
-
-
-/* =========================================================
-   Brick Types
-========================================================= */
-
-const brickTypes = [
-
-  "red",
-  "yellow",
-  "green",
-  "blue",
-  "purple"
-
-];
 
 
 let bricks = [];
@@ -295,7 +311,6 @@ let bricks = [];
 function createBricks() {
 
   bricks = [];
-
 
   for (
     let row = 0;
@@ -313,49 +328,35 @@ function createBricks() {
 
         x:
           BRICK_START_X +
-
           col *
-
           (
             BRICK_WIDTH +
             BRICK_GAP_X
           ),
 
-
         y:
           BRICK_START_Y +
-
           row *
-
           (
             BRICK_HEIGHT +
             BRICK_GAP_Y
           ),
 
-
         width:
           BRICK_WIDTH,
-
 
         height:
           BRICK_HEIGHT,
 
-
         type:
-
           brickTypes[
-
             (
               row +
               col
             )
-
             %
-
             brickTypes.length
-
           ],
-
 
         active: true
 
@@ -369,26 +370,24 @@ function createBricks() {
 
 
 /* =========================================================
-   Init Game
+   Init
 ========================================================= */
 
 function initGame() {
 
   score = 0;
 
+  paddle.x =
+    GAME_WIDTH / 2 -
+    paddle.width / 2;
+
   createBricks();
 
   resetBall();
 
-
-  paddle.x =
-
-    GAME_WIDTH / 2 -
-
-    paddle.width / 2;
-
-
   running = true;
+
+  lastTime = 0;
 
   requestAnimationFrame(
     gameLoop
@@ -404,25 +403,28 @@ function initGame() {
 function resetBall() {
 
   ball.x =
-
     GAME_WIDTH / 2 -
-
     ball.width / 2;
-
 
   ball.y = 900;
 
 
+  /*
+    每次重新發球
+    左右方向隨機
+  */
+
+  const direction =
+    Math.random() < 0.5
+      ? -1
+      : 1;
+
+
   ball.vx =
+    210 *
+    direction;
 
-    Math.random() > 0.5
-
-      ? 4
-
-      : -4;
-
-
-  ball.vy = -7;
+  ball.vy = -398;
 
 }
 
@@ -431,16 +433,48 @@ function resetBall() {
    Main Loop
 ========================================================= */
 
-function gameLoop() {
+function gameLoop(time) {
 
   if (!running) {
-
     return;
-
   }
 
 
-  update();
+  /*
+    Delta Time
+
+    避免 60Hz / 120Hz
+    遊戲速度不同
+  */
+
+  let deltaTime = 0;
+
+  if (lastTime !== 0) {
+
+    deltaTime =
+      (
+        time -
+        lastTime
+      ) / 1000;
+
+  }
+
+  lastTime = time;
+
+
+  /*
+    避免切換分頁回來
+    delta 過大
+  */
+
+  deltaTime =
+    Math.min(
+      deltaTime,
+      1 / 30
+    );
+
+
+  update(deltaTime);
 
   draw();
 
@@ -456,20 +490,38 @@ function gameLoop() {
    Update
 ========================================================= */
 
-function update() {
+function update(deltaTime) {
 
-  /* ==============================
+  if (
+    deltaTime <= 0
+  ) {
+    return;
+  }
+
+
+  const previousX =
+    ball.x;
+
+  const previousY =
+    ball.y;
+
+
+  /* =======================================================
      Move Ball
-  ============================== */
+  ======================================================= */
 
-  ball.x += ball.vx;
+  ball.x +=
+    ball.vx *
+    deltaTime;
 
-  ball.y += ball.vy;
+  ball.y +=
+    ball.vy *
+    deltaTime;
 
 
-  /* ==============================
+  /* =======================================================
      Left Wall
-  ============================== */
+  ======================================================= */
 
   if (
     ball.x <= 0
@@ -485,27 +537,21 @@ function update() {
   }
 
 
-  /* ==============================
+  /* =======================================================
      Right Wall
-  ============================== */
+  ======================================================= */
 
   if (
-
     ball.x +
     ball.width >=
     GAME_WIDTH
-
   ) {
 
     ball.x =
-
       GAME_WIDTH -
-
       ball.width;
 
-
     ball.vx =
-
       -Math.abs(
         ball.vx
       );
@@ -513,9 +559,9 @@ function update() {
   }
 
 
-  /* ==============================
+  /* =======================================================
      Top Wall
-  ============================== */
+  ======================================================= */
 
   if (
     ball.y <= 0
@@ -531,74 +577,49 @@ function update() {
   }
 
 
-  /* ==============================
+  /* =======================================================
      Paddle Collision
-  ============================== */
+  ======================================================= */
 
   if (
 
     ball.vy > 0 &&
 
-    ball.x +
-    ball.width >
-    paddle.x &&
-
-    ball.x <
-    paddle.x +
-    paddle.width &&
-
-    ball.y +
-    ball.height >
-    paddle.y &&
-
-    ball.y <
-    paddle.y +
-    paddle.height
+    rectangleCollision(
+      ball,
+      paddle
+    )
 
   ) {
 
     /*
-      防止球卡進擋板
+      防止卡入擋板
     */
 
     ball.y =
-
       paddle.y -
-
       ball.height;
 
-
-    /*
-      往上反彈
-    */
-
-    ball.vy =
-
-      -Math.abs(
-        ball.vy
-      );
-
-
-    /*
-      球撞到擋板不同位置
-      會改變左右方向
-    */
 
     const ballCenter =
 
       ball.x +
-
       ball.width / 2;
 
 
     const paddleCenter =
 
       paddle.x +
-
       paddle.width / 2;
 
 
-    const hitPosition =
+    /*
+      -1 = 最左
+       0 = 中間
+       1 = 最右
+    */
+
+    let hitPosition =
 
       (
         ballCenter -
@@ -612,38 +633,65 @@ function update() {
       );
 
 
+    hitPosition =
+      clamp(
+        hitPosition,
+        -1,
+        1
+      );
+
+
     /*
-      最大水平速度約 7
+      最大約 65 度
     */
 
+    const maxAngle =
+      Math.PI *
+      0.36;
+
+
+    const angle =
+      hitPosition *
+      maxAngle;
+
+
     ball.vx =
-      hitPosition * 7;
+      Math.sin(
+        angle
+      ) *
+      BALL_SPEED;
+
+
+    ball.vy =
+      -Math.cos(
+        angle
+      ) *
+      BALL_SPEED;
 
 
     /*
-      避免太垂直
+      避免完全垂直
     */
 
     if (
-      Math.abs(ball.vx) < 1.5
+      Math.abs(
+        ball.vx
+      ) < 45
     ) {
 
       ball.vx =
-
         ball.vx < 0
-
-          ? -1.5
-
-          : 1.5;
+          ? -45
+          : 45;
 
     }
 
   }
 
 
-  /* ==============================
+  /* =======================================================
      Brick Collision
-  ============================== */
+  ======================================================= */
 
   for (
     const brick of bricks
@@ -652,66 +700,63 @@ function update() {
     if (
       !brick.active
     ) {
-
       continue;
-
     }
 
 
     if (
-
-      ball.x +
-      ball.width >
-      brick.x &&
-
-      ball.x <
-      brick.x +
-      brick.width &&
-
-      ball.y +
-      ball.height >
-      brick.y &&
-
-      ball.y <
-      brick.y +
-      brick.height
-
+      !rectangleCollision(
+        ball,
+        brick
+      )
     ) {
-
-      brick.active = false;
-
-      score += 100;
-
-
-      /*
-        第一版先採用簡單反彈
-      */
-
-      ball.vy *= -1;
-
-
-      break;
-
+      continue;
     }
+
+
+    /*
+      磚塊消失
+    */
+
+    brick.active = false;
+
+    score += 100;
+
+
+    /*
+      判斷球是從哪一側
+      撞到磚塊
+    */
+
+    resolveBrickCollision(
+      brick,
+      previousX,
+      previousY
+    );
+
+
+    /*
+      每 frame 最多處理一顆磚塊
+    */
+
+    break;
 
   }
 
 
-  /* ==============================
+  /* =======================================================
      Ball Lost
-  ============================== */
+  ======================================================= */
 
   /*
-    球進入手指操作區
-    視為掉球
+    球進入底部操作區
+    = 掉球
   */
 
   if (
-
     ball.y +
     ball.height >=
     CONTROL_ZONE_Y
-
   ) {
 
     resetBall();
@@ -719,22 +764,20 @@ function update() {
   }
 
 
-  /* ==============================
+  /* =======================================================
      Stage Clear
-  ============================== */
+  ======================================================= */
 
-  const remainingBricks =
+  const hasBrick =
 
-    bricks.filter(
-
+    bricks.some(
       brick =>
         brick.active
-
     );
 
 
   if (
-    remainingBricks.length === 0
+    !hasBrick
   ) {
 
     createBricks();
@@ -742,6 +785,199 @@ function update() {
     resetBall();
 
   }
+
+}
+
+
+/* =========================================================
+   Brick Collision Resolve
+========================================================= */
+
+function resolveBrickCollision(
+  brick,
+  previousX,
+  previousY
+) {
+
+  const previousLeft =
+    previousX;
+
+  const previousRight =
+    previousX +
+    ball.width;
+
+  const previousTop =
+    previousY;
+
+  const previousBottom =
+    previousY +
+    ball.height;
+
+
+  const brickLeft =
+    brick.x;
+
+  const brickRight =
+    brick.x +
+    brick.width;
+
+  const brickTop =
+    brick.y;
+
+  const brickBottom =
+    brick.y +
+    brick.height;
+
+
+  /*
+    從上方撞磚塊
+  */
+
+  if (
+    previousBottom <=
+    brickTop
+  ) {
+
+    ball.y =
+      brickTop -
+      ball.height;
+
+    ball.vy =
+      -Math.abs(
+        ball.vy
+      );
+
+    return;
+
+  }
+
+
+  /*
+    從下方撞磚塊
+  */
+
+  if (
+    previousTop >=
+    brickBottom
+  ) {
+
+    ball.y =
+      brickBottom;
+
+    ball.vy =
+      Math.abs(
+        ball.vy
+      );
+
+    return;
+
+  }
+
+
+  /*
+    從左側撞
+  */
+
+  if (
+    previousRight <=
+    brickLeft
+  ) {
+
+    ball.x =
+      brickLeft -
+      ball.width;
+
+    ball.vx =
+      -Math.abs(
+        ball.vx
+      );
+
+    return;
+
+  }
+
+
+  /*
+    從右側撞
+  */
+
+  if (
+    previousLeft >=
+    brickRight
+  ) {
+
+    ball.x =
+      brickRight;
+
+    ball.vx =
+      Math.abs(
+        ball.vx
+      );
+
+    return;
+
+  }
+
+
+  /*
+    特殊重疊情況
+    fallback
+  */
+
+  ball.vy *= -1;
+
+}
+
+
+/* =========================================================
+   Rectangle Collision
+========================================================= */
+
+function rectangleCollision(
+  a,
+  b
+) {
+
+  return (
+
+    a.x <
+    b.x +
+    b.width &&
+
+    a.x +
+    a.width >
+    b.x &&
+
+    a.y <
+    b.y +
+    b.height &&
+
+    a.y +
+    a.height >
+    b.y
+
+  );
+
+}
+
+
+/* =========================================================
+   Clamp
+========================================================= */
+
+function clamp(
+  value,
+  min,
+  max
+) {
+
+  return Math.max(
+    min,
+    Math.min(
+      max,
+      value
+    )
+  );
 
 }
 
@@ -762,15 +998,13 @@ function draw() {
 
   drawBackground();
 
-  drawScore();
-
   drawBricks();
 
   drawBall();
 
   drawPaddle();
 
-  drawControlZone();
+  drawScore();
 
 }
 
@@ -781,88 +1015,107 @@ function draw() {
 
 function drawBackground() {
 
+  const bg =
+    assets.bg;
+
+
+  if (
+    !bg
+  ) {
+    return;
+  }
+
+
   /*
-    遊戲區背景
+    Pixel Art BG
+    關閉圖片平滑
   */
 
-  const gradient =
+  ctx.imageSmoothingEnabled =
+    false;
 
-    ctx.createLinearGradient(
-      0,
-      0,
-      0,
-      CONTROL_ZONE_Y
+
+  const sourceWidth =
+    bg.naturalWidth;
+
+  const sourceHeight =
+    bg.naturalHeight;
+
+
+  /*
+    找 BG 原圖裡
+    上方遊戲區與下方控制區的分界
+  */
+
+  const sourceSplitY =
+
+    Math.floor(
+
+      sourceHeight *
+      BG_SOURCE_SPLIT_RATIO
+
     );
 
 
-  gradient.addColorStop(
-    0,
-    "#182848"
-  );
+  /* =======================================================
+     BG 上半部
+     拉到 Y = 0 ~ 1120
+  ======================================================= */
 
+  ctx.drawImage(
 
-  gradient.addColorStop(
-    0.5,
-    "#203a64"
-  );
+    bg,
 
-
-  gradient.addColorStop(
-    1,
-    "#101827"
-  );
-
-
-  ctx.fillStyle =
-    gradient;
-
-
-  ctx.fillRect(
     0,
     0,
+
+    sourceWidth,
+    sourceSplitY,
+
+    0,
+    0,
+
     GAME_WIDTH,
     CONTROL_ZONE_Y
+
   );
 
-}
 
+  /* =======================================================
+     BG 下方控制區
 
-/* =========================================================
-   Control Zone
-========================================================= */
+     拉到 Y = 1120 ~ 1280
 
-function drawControlZone() {
+     這樣圖片本身的灰色區域
+     與實際手指操作區完全一致
+  ======================================================= */
 
-  /*
-    下方手指左右滑動區
-  */
+  ctx.drawImage(
 
-  ctx.fillStyle =
-    "#555555";
+    bg,
 
+    0,
+    sourceSplitY,
 
-  ctx.fillRect(
+    sourceWidth,
+    sourceHeight -
+    sourceSplitY,
+
     0,
     CONTROL_ZONE_Y,
+
     GAME_WIDTH,
     CONTROL_ZONE_HEIGHT
+
   );
 
 
   /*
-    操作區上方分隔線
+    其他遊戲素材恢復平滑
   */
 
-  ctx.fillStyle =
-    "rgba(255,255,255,0.15)";
-
-
-  ctx.fillRect(
-    0,
-    CONTROL_ZONE_Y,
-    GAME_WIDTH,
-    2
-  );
+  ctx.imageSmoothingEnabled =
+    true;
 
 }
 
@@ -873,27 +1126,55 @@ function drawControlZone() {
 
 function drawScore() {
 
-  ctx.fillStyle =
-    "rgba(255,255,255,0.9)";
-
-
-  ctx.font =
-    "bold 28px Arial";
+  ctx.save();
 
 
   ctx.textAlign =
     "center";
 
-
   ctx.textBaseline =
     "middle";
 
 
+  ctx.font =
+    "bold 28px monospace";
+
+
+  /*
+    Pixel / Arcade 風格陰影
+  */
+
+  ctx.fillStyle =
+    "rgba(0,0,0,0.75)";
+
+
   ctx.fillText(
+
     `SCORE ${score}`,
-    GAME_WIDTH / 2,
-    60
+
+    GAME_WIDTH / 2 + 2,
+
+    62
+
   );
+
+
+  ctx.fillStyle =
+    "#ffffff";
+
+
+  ctx.fillText(
+
+    `SCORE ${score}`,
+
+    GAME_WIDTH / 2,
+
+    60
+
+  );
+
+
+  ctx.restore();
 
 }
 
@@ -904,6 +1185,10 @@ function drawScore() {
 
 function drawBricks() {
 
+  ctx.imageSmoothingEnabled =
+    true;
+
+
   for (
     const brick of bricks
   ) {
@@ -911,26 +1196,26 @@ function drawBricks() {
     if (
       !brick.active
     ) {
-
       continue;
-
     }
 
 
-    const img =
+    const image =
       assets[
         brick.type
       ];
 
 
     ctx.drawImage(
-      img,
+
+      image,
 
       brick.x,
       brick.y,
 
       brick.width,
       brick.height
+
     );
 
   }
@@ -944,7 +1229,12 @@ function drawBricks() {
 
 function drawBall() {
 
+  ctx.imageSmoothingEnabled =
+    true;
+
+
   ctx.drawImage(
+
     assets.ball,
 
     ball.x,
@@ -952,6 +1242,7 @@ function drawBall() {
 
     ball.width,
     ball.height
+
   );
 
 }
@@ -963,7 +1254,12 @@ function drawBall() {
 
 function drawPaddle() {
 
+  ctx.imageSmoothingEnabled =
+    true;
+
+
   ctx.drawImage(
+
     assets.paddle,
 
     paddle.x,
@@ -971,13 +1267,14 @@ function drawPaddle() {
 
     paddle.width,
     paddle.height
+
   );
 
 }
 
 
 /* =========================================================
-   Canvas Position
+   Canvas Coordinate
 ========================================================= */
 
 function getCanvasPosition(
@@ -985,47 +1282,35 @@ function getCanvasPosition(
 ) {
 
   const rect =
-
     canvas.getBoundingClientRect();
 
 
   const scaleX =
-
     GAME_WIDTH /
-
     rect.width;
 
 
   const scaleY =
-
     GAME_HEIGHT /
-
     rect.height;
 
 
   return {
 
     x:
-
       (
         event.clientX -
         rect.left
       )
-
       *
-
       scaleX,
 
-
     y:
-
       (
         event.clientY -
         rect.top
       )
-
       *
-
       scaleY
 
   };
@@ -1048,110 +1333,88 @@ function movePaddle(
     paddle.width / 2;
 
 
-  /*
-    左側限制
-  */
+  paddle.x =
 
-  if (
-    paddle.x < 0
-  ) {
+    clamp(
 
-    paddle.x = 0;
+      paddle.x,
 
-  }
-
-
-  /*
-    右側限制
-  */
-
-  if (
-
-    paddle.x +
-    paddle.width >
-    GAME_WIDTH
-
-  ) {
-
-    paddle.x =
+      0,
 
       GAME_WIDTH -
+      paddle.width
 
-      paddle.width;
-
-  }
+    );
 
 }
 
 
 /* =========================================================
-   Pointer Input
+   Pointer Control
 ========================================================= */
 
 let controlPointerId = null;
 
 
-/* ==============================
+/* =========================================================
    Pointer Down
-============================== */
+========================================================= */
 
 canvas.addEventListener(
   "pointerdown",
-  (event) => {
+  event => {
 
-    const pos =
-
+    const position =
       getCanvasPosition(
         event
       );
 
 
     /*
-      只有點擊灰色操作區
-      才能開始控制
+      必須從底部控制區開始操作
     */
 
     if (
-      pos.y >=
+      position.y <
       CONTROL_ZONE_Y
     ) {
-
-      controlPointerId =
-        event.pointerId;
-
-
-      canvas.setPointerCapture(
-        event.pointerId
-      );
-
-
-      movePaddle(
-        pos.x
-      );
-
+      return;
     }
+
+
+    controlPointerId =
+      event.pointerId;
+
+
+    canvas.setPointerCapture(
+      event.pointerId
+    );
+
+
+    movePaddle(
+      position.x
+    );
 
   }
 );
 
 
-/* ==============================
+/* =========================================================
    Pointer Move
-============================== */
+========================================================= */
 
 canvas.addEventListener(
   "pointermove",
-  (event) => {
+  event => {
 
-    const pos =
-
+    const position =
       getCanvasPosition(
         event
       );
 
 
     /*
-      手機 / 按住滑鼠
+      手指拖曳
     */
 
     if (
@@ -1160,7 +1423,7 @@ canvas.addEventListener(
     ) {
 
       movePaddle(
-        pos.x
+        position.x
       );
 
       return;
@@ -1169,9 +1432,10 @@ canvas.addEventListener(
 
 
     /*
-      電腦滑鼠：
-      游標位於灰色區域時
-      可直接左右移動
+      PC 滑鼠
+
+      滑鼠位於控制區時
+      可以直接移動擋板
     */
 
     if (
@@ -1179,13 +1443,13 @@ canvas.addEventListener(
       event.pointerType ===
       "mouse" &&
 
-      pos.y >=
+      position.y >=
       CONTROL_ZONE_Y
 
     ) {
 
       movePaddle(
-        pos.x
+        position.x
       );
 
     }
@@ -1194,63 +1458,113 @@ canvas.addEventListener(
 );
 
 
-/* ==============================
+/* =========================================================
    Pointer Up
-============================== */
+========================================================= */
 
 canvas.addEventListener(
   "pointerup",
-  (event) => {
+  event => {
 
-    if (
-
-      controlPointerId ===
-      event.pointerId
-
-    ) {
-
-      if (
-        canvas.hasPointerCapture(
-          event.pointerId
-        )
-      ) {
-
-        canvas.releasePointerCapture(
-          event.pointerId
-        );
-
-      }
-
-
-      controlPointerId = null;
-
-    }
+    endPointerControl(
+      event
+    );
 
   }
 );
 
 
-/* ==============================
+/* =========================================================
    Pointer Cancel
-============================== */
+========================================================= */
 
 canvas.addEventListener(
   "pointercancel",
-  (event) => {
+  event => {
 
-    if (
-
-      controlPointerId ===
-      event.pointerId
-
-    ) {
-
-      controlPointerId = null;
-
-    }
+    endPointerControl(
+      event
+    );
 
   }
 );
+
+
+/* =========================================================
+   End Pointer
+========================================================= */
+
+function endPointerControl(
+  event
+) {
+
+  if (
+    controlPointerId !==
+    event.pointerId
+  ) {
+    return;
+  }
+
+
+  if (
+    canvas.hasPointerCapture(
+      event.pointerId
+    )
+  ) {
+
+    canvas.releasePointerCapture(
+      event.pointerId
+    );
+
+  }
+
+
+  controlPointerId = null;
+
+}
+
+
+/* =========================================================
+   Load Error
+========================================================= */
+
+function drawLoadError() {
+
+  ctx.fillStyle =
+    "#050914";
+
+
+  ctx.fillRect(
+    0,
+    0,
+    GAME_WIDTH,
+    GAME_HEIGHT
+  );
+
+
+  ctx.fillStyle =
+    "#ffffff";
+
+
+  ctx.font =
+    "24px monospace";
+
+
+  ctx.textAlign =
+    "center";
+
+
+  ctx.fillText(
+
+    "ASSET LOAD ERROR",
+
+    GAME_WIDTH / 2,
+
+    GAME_HEIGHT / 2
+
+  );
+
+}
 
 </script>
 
