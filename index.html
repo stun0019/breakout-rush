@@ -71,13 +71,15 @@ const GAME_HEIGHT = 1280;
 
 
 /* =========================================================
-   State
+   App State
 ========================================================= */
 
 const STATE_MENU = "menu";
 const STATE_GAME = "game";
 const STATE_HOW_TO_PLAY = "howToPlay";
 const STATE_CREDITS = "credits";
+const STATE_GAME_OVER = "gameOver";
+const STATE_CLEAR = "clear";
 
 let appState = STATE_MENU;
 
@@ -213,10 +215,14 @@ Promise.all([
 
 
 /* =========================================================
-   Game State
+   Game Data
 ========================================================= */
 
 let score = 0;
+
+const MAX_LIVES = 3;
+
+let lives = MAX_LIVES;
 
 
 /* =========================================================
@@ -312,7 +318,7 @@ let bricks = [];
 
 
 /* =========================================================
-   Main Menu
+   Main Menu Layout
 ========================================================= */
 
 const MENU_BUTTON_X = 145;
@@ -356,6 +362,32 @@ const GAME_MENU_BUTTON = {
 
 
 /* =========================================================
+   Result Buttons
+========================================================= */
+
+const RESULT_RETRY_BUTTON = {
+
+  x: 145,
+  y: 700,
+
+  width: 430,
+  height: 120
+
+};
+
+
+const RESULT_MENU_BUTTON = {
+
+  x: 145,
+  y: 850,
+
+  width: 430,
+  height: 120
+
+};
+
+
+/* =========================================================
    Init App
 ========================================================= */
 
@@ -384,6 +416,8 @@ function startNewGame() {
 
   score = 0;
 
+  lives = MAX_LIVES;
+
   paddle.x =
     GAME_WIDTH / 2 -
     paddle.width / 2;
@@ -392,9 +426,9 @@ function startNewGame() {
 
   resetBall();
 
-  canContinue = true;
-
   controlPointerId = null;
+
+  canContinue = true;
 
   appState = STATE_GAME;
 
@@ -423,7 +457,7 @@ function continueGame() {
 
 
 /* =========================================================
-   Return Menu
+   Return Main Menu
 ========================================================= */
 
 function returnToMenu() {
@@ -441,6 +475,42 @@ function returnToMenu() {
   hoveredMenuButton = -1;
 
   appState = STATE_MENU;
+
+  lastTime = 0;
+
+}
+
+
+/* =========================================================
+   Game Over
+========================================================= */
+
+function gameOver() {
+
+  lives = 0;
+
+  canContinue = false;
+
+  controlPointerId = null;
+
+  appState = STATE_GAME_OVER;
+
+  lastTime = 0;
+
+}
+
+
+/* =========================================================
+   Stage Clear
+========================================================= */
+
+function stageClear() {
+
+  canContinue = false;
+
+  controlPointerId = null;
+
+  appState = STATE_CLEAR;
 
   lastTime = 0;
 
@@ -527,8 +597,7 @@ function resetBall() {
 
   const direction =
 
-    Math.random() <
-    0.5
+    Math.random() < 0.5
 
       ? -1
 
@@ -552,6 +621,7 @@ function gameLoop(time) {
 
   let deltaTime = 0;
 
+
   if (
     lastTime !== 0
   ) {
@@ -568,6 +638,7 @@ function gameLoop(time) {
       1000;
 
   }
+
 
   lastTime = time;
 
@@ -724,16 +795,14 @@ function updateGame(deltaTime) {
 
       ball.x +
 
-      ball.width /
-      2;
+      ball.width / 2;
 
 
     const paddleCenter =
 
       paddle.x +
 
-      paddle.width /
-      2;
+      paddle.width / 2;
 
 
     let hitPosition =
@@ -746,8 +815,7 @@ function updateGame(deltaTime) {
       /
 
       (
-        paddle.width /
-        2
+        paddle.width / 2
       );
 
 
@@ -794,7 +862,9 @@ function updateGame(deltaTime) {
       BALL_SPEED;
 
 
-    /* 避免完全垂直 */
+    /*
+      避免球完全垂直
+    */
 
     if (
 
@@ -804,13 +874,29 @@ function updateGame(deltaTime) {
 
     ) {
 
-      const direction =
+      let direction;
 
+
+      if (
         hitPosition < 0
+      ) {
 
-          ? -1
+        direction = -1;
 
-          : 1;
+      } else if (
+        hitPosition > 0
+      ) {
+
+        direction = 1;
+
+      } else {
+
+        direction =
+          Math.random() < 0.5
+            ? -1
+            : 1;
+
+      }
 
 
       ball.vx =
@@ -886,7 +972,9 @@ function updateGame(deltaTime) {
 
   ) {
 
-    resetBall();
+    handleBallLost();
+
+    return;
 
   }
 
@@ -895,7 +983,7 @@ function updateGame(deltaTime) {
      Stage Clear
   ======================================================= */
 
-  const hasBrick =
+  const remainingBricks =
 
     bricks.some(
 
@@ -906,14 +994,47 @@ function updateGame(deltaTime) {
 
 
   if (
-    !hasBrick
+    !remainingBricks
   ) {
 
-    createBricks();
-
-    resetBall();
+    stageClear();
 
   }
+
+}
+
+
+/* =========================================================
+   Ball Lost
+========================================================= */
+
+function handleBallLost() {
+
+  lives -= 1;
+
+
+  if (
+    lives <= 0
+  ) {
+
+    gameOver();
+
+    return;
+
+  }
+
+
+  /*
+    還有生命
+    重新把球放回場上
+  */
+
+  paddle.x =
+    GAME_WIDTH / 2 -
+    paddle.width / 2;
+
+
+  resetBall();
 
 }
 
@@ -958,7 +1079,9 @@ function resolveBrickCollision(
     brick.height;
 
 
-  /* 上方撞擊 */
+  /* =======================================================
+     Hit From Top
+  ======================================================= */
 
   if (
     previousBottom <=
@@ -983,7 +1106,9 @@ function resolveBrickCollision(
   }
 
 
-  /* 下方撞擊 */
+  /* =======================================================
+     Hit From Bottom
+  ======================================================= */
 
   if (
     previousTop >=
@@ -1005,7 +1130,9 @@ function resolveBrickCollision(
   }
 
 
-  /* 左側撞擊 */
+  /* =======================================================
+     Hit From Left
+  ======================================================= */
 
   if (
     previousRight <=
@@ -1030,7 +1157,9 @@ function resolveBrickCollision(
   }
 
 
-  /* 右側撞擊 */
+  /* =======================================================
+     Hit From Right
+  ======================================================= */
 
   if (
     previousLeft >=
@@ -1052,13 +1181,17 @@ function resolveBrickCollision(
   }
 
 
+  /*
+    Fallback
+  */
+
   ball.vy *= -1;
 
 }
 
 
 /* =========================================================
-   Collision
+   Rectangle Collision
 ========================================================= */
 
 function rectangleCollision(
@@ -1102,11 +1235,13 @@ function pointInRect(
   return (
 
     x >= rect.x &&
+
     x <=
     rect.x +
     rect.width &&
 
     y >= rect.y &&
+
     y <=
     rect.y +
     rect.height
@@ -1154,44 +1289,50 @@ function draw() {
   );
 
 
-  if (
-    appState === STATE_GAME
+  switch (
+    appState
   ) {
 
-    drawGame();
+    case STATE_MENU:
 
-    return;
+      drawMainMenu();
 
-  }
-
-
-  if (
-    appState === STATE_MENU
-  ) {
-
-    drawMainMenu();
-
-    return;
-
-  }
+      break;
 
 
-  if (
-    appState === STATE_HOW_TO_PLAY
-  ) {
+    case STATE_GAME:
 
-    drawHowToPlay();
+      drawGame();
 
-    return;
-
-  }
+      break;
 
 
-  if (
-    appState === STATE_CREDITS
-  ) {
+    case STATE_HOW_TO_PLAY:
 
-    drawCredits();
+      drawHowToPlay();
+
+      break;
+
+
+    case STATE_CREDITS:
+
+      drawCredits();
+
+      break;
+
+
+    case STATE_GAME_OVER:
+
+      drawGameOver();
+
+      break;
+
+
+    case STATE_CLEAR:
+
+      drawStageClear();
+
+      break;
 
   }
 
@@ -1199,7 +1340,7 @@ function draw() {
 
 
 /* =========================================================
-   Main Menu BG
+   Menu Background
 ========================================================= */
 
 function drawMenuBackground() {
@@ -1231,12 +1372,37 @@ function drawMainMenu() {
 
   drawMenuBackground();
 
+  drawMainTitle();
 
-  /* =======================================================
-     Title
-  ======================================================= */
+
+  const buttons =
+    getMenuButtons();
+
+
+  for (
+    let i = 0;
+    i < buttons.length;
+    i++
+  ) {
+
+    drawMenuButton(
+      buttons[i],
+      i
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   Main Title
+========================================================= */
+
+function drawMainTitle() {
 
   ctx.save();
+
 
   ctx.textAlign =
     "center";
@@ -1244,11 +1410,10 @@ function drawMainMenu() {
   ctx.textBaseline =
     "middle";
 
+
   ctx.font =
     "bold 48px monospace";
 
-
-  /* Black shadow */
 
   ctx.lineWidth = 8;
 
@@ -1313,28 +1478,6 @@ function drawMainMenu() {
 
 
   ctx.restore();
-
-
-  /* =======================================================
-     Menu Buttons
-  ======================================================= */
-
-  const buttons =
-    getMenuButtons();
-
-
-  for (
-    let i = 0;
-    i < buttons.length;
-    i++
-  ) {
-
-    drawMenuButton(
-      buttons[i],
-      i
-    );
-
-  }
 
 }
 
@@ -1430,11 +1573,44 @@ function drawMenuButton(
       : 0;
 
 
+  drawButton(
+
+    button.x,
+
+    button.y +
+    offsetY,
+
+    button.width,
+
+    button.height,
+
+    button.label,
+
+    button.enabled
+
+  );
+
+}
+
+
+/* =========================================================
+   Generic Pixel Button
+========================================================= */
+
+function drawButton(
+  x,
+  y,
+  width,
+  height,
+  label,
+  enabled = true
+) {
+
   ctx.save();
 
 
   if (
-    !button.enabled
+    !enabled
   ) {
 
     ctx.globalAlpha =
@@ -1451,20 +1627,17 @@ function drawMenuButton(
 
     assets.menuButton,
 
-    button.x,
+    x,
+    y,
 
-    button.y +
-    offsetY,
-
-    button.width,
-
-    button.height
+    width,
+    height
 
   );
 
 
   ctx.globalAlpha =
-    button.enabled
+    enabled
       ? 1
       : 0.42;
 
@@ -1480,11 +1653,10 @@ function drawMenuButton(
 
 
   if (
-    button.label ===
-    "HOW TO PLAY"
+    label.length >= 10
   ) {
 
-    fontSize = 32;
+    fontSize = 31;
 
   }
 
@@ -1494,8 +1666,6 @@ function drawMenuButton(
     `bold ${fontSize}px monospace`;
 
 
-  /* Text shadow */
-
   ctx.lineWidth = 7;
 
   ctx.strokeStyle =
@@ -1504,23 +1674,20 @@ function drawMenuButton(
 
   ctx.strokeText(
 
-    button.label,
+    label,
 
-    button.x +
-    button.width / 2,
+    x +
+    width / 2,
 
-    button.y +
-    button.height / 2 +
-    offsetY
+    y +
+    height / 2
 
   );
 
 
-  /* Gold Text */
-
   ctx.fillStyle =
 
-    button.enabled
+    enabled
 
       ? "#d99432"
 
@@ -1529,14 +1696,13 @@ function drawMenuButton(
 
   ctx.fillText(
 
-    button.label,
+    label,
 
-    button.x +
-    button.width / 2,
+    x +
+    width / 2,
 
-    button.y +
-    button.height / 2 +
-    offsetY
+    y +
+    height / 2
 
   );
 
@@ -1562,52 +1728,61 @@ function drawHowToPlay() {
 
   ctx.save();
 
+
   ctx.textAlign =
     "center";
 
   ctx.textBaseline =
     "middle";
 
+
   ctx.fillStyle =
     "#322e24";
 
 
   ctx.font =
-    "bold 30px monospace";
+    "bold 29px monospace";
 
 
   ctx.fillText(
     "DRAG YOUR FINGER",
     GAME_WIDTH / 2,
-    440
+    420
   );
 
 
   ctx.fillText(
     "IN THE BOTTOM AREA",
     GAME_WIDTH / 2,
-    490
+    475
   );
 
 
   ctx.fillText(
     "MOVE THE PADDLE",
     GAME_WIDTH / 2,
-    590
+    580
   );
 
 
   ctx.fillText(
     "BREAK ALL BRICKS",
     GAME_WIDTH / 2,
-    690
+    680
   );
 
 
   ctx.fillText(
-    "DO NOT MISS THE BALL",
+    "YOU HAVE 3 LIVES",
     GAME_WIDTH / 2,
-    790
+    780
+  );
+
+
+  ctx.fillText(
+    "DON'T MISS THE BALL",
+    GAME_WIDTH / 2,
+    835
   );
 
 
@@ -1635,6 +1810,7 @@ function drawCredits() {
 
   ctx.save();
 
+
   ctx.textAlign =
     "center";
 
@@ -1651,9 +1827,13 @@ function drawCredits() {
 
 
   ctx.fillText(
+
     "BREAKOUT RUSH",
+
     GAME_WIDTH / 2,
+
     480
+
   );
 
 
@@ -1662,16 +1842,24 @@ function drawCredits() {
 
 
   ctx.fillText(
+
     "GAME PROTOTYPE",
+
     GAME_WIDTH / 2,
+
     550
+
   );
 
 
   ctx.fillText(
+
     "2026",
+
     GAME_WIDTH / 2,
+
     610
+
   );
 
 
@@ -1699,6 +1887,7 @@ function drawPageTitle(
 
   ctx.textBaseline =
     "middle";
+
 
   ctx.font =
     "bold 43px monospace";
@@ -1747,71 +1936,17 @@ function drawPageTitle(
 
 function drawBackButton() {
 
-  ctx.save();
-
-  ctx.imageSmoothingEnabled =
-    false;
-
-
-  ctx.drawImage(
-
-    assets.menuButton,
+  drawButton(
 
     BACK_BUTTON.x,
     BACK_BUTTON.y,
 
     BACK_BUTTON.width,
-    BACK_BUTTON.height
+    BACK_BUTTON.height,
+
+    "BACK"
 
   );
-
-
-  ctx.textAlign =
-    "center";
-
-  ctx.textBaseline =
-    "middle";
-
-  ctx.font =
-    "bold 35px monospace";
-
-  ctx.lineWidth = 7;
-
-  ctx.strokeStyle =
-    "#17130e";
-
-
-  ctx.strokeText(
-
-    "BACK",
-
-    BACK_BUTTON.x +
-    BACK_BUTTON.width / 2,
-
-    BACK_BUTTON.y +
-    BACK_BUTTON.height / 2
-
-  );
-
-
-  ctx.fillStyle =
-    "#d99432";
-
-
-  ctx.fillText(
-
-    "BACK",
-
-    BACK_BUTTON.x +
-    BACK_BUTTON.width / 2,
-
-    BACK_BUTTON.y +
-    BACK_BUTTON.height / 2
-
-  );
-
-
-  ctx.restore();
 
 }
 
@@ -1830,7 +1965,7 @@ function drawGame() {
 
   drawPaddle();
 
-  drawScore();
+  drawHUD();
 
   drawGameMenuButton();
 
@@ -1868,7 +2003,7 @@ function drawGameBackground() {
     );
 
 
-  /* Gameplay section */
+  /* Gameplay */
 
   ctx.drawImage(
 
@@ -1889,7 +2024,7 @@ function drawGameBackground() {
   );
 
 
-  /* Finger control section */
+  /* Control Zone */
 
   ctx.drawImage(
 
@@ -1915,35 +2050,81 @@ function drawGameBackground() {
 
 
 /* =========================================================
-   Draw Score
+   HUD
 ========================================================= */
 
-function drawScore() {
+function drawHUD() {
 
   ctx.save();
 
-
-  ctx.textAlign =
-    "center";
 
   ctx.textBaseline =
     "middle";
 
   ctx.font =
-    "bold 28px monospace";
+    "bold 25px monospace";
 
+
+  /* Score */
+
+  ctx.textAlign =
+    "left";
+
+
+  drawHUDText(
+
+    `SCORE ${score}`,
+
+    28,
+
+    48
+
+  );
+
+
+  /* Lives */
+
+  ctx.textAlign =
+    "center";
+
+
+  drawHUDText(
+
+    `LIFE ${lives}`,
+
+    GAME_WIDTH / 2,
+
+    48
+
+  );
+
+
+  ctx.restore();
+
+}
+
+
+/* =========================================================
+   HUD Text
+========================================================= */
+
+function drawHUDText(
+  text,
+  x,
+  y
+) {
 
   ctx.fillStyle =
-    "rgba(0,0,0,0.8)";
+    "rgba(0,0,0,0.85)";
 
 
   ctx.fillText(
 
-    `SCORE ${score}`,
+    text,
 
-    GAME_WIDTH / 2 + 2,
+    x + 2,
 
-    62
+    y + 2
 
   );
 
@@ -1954,16 +2135,13 @@ function drawScore() {
 
   ctx.fillText(
 
-    `SCORE ${score}`,
+    text,
 
-    GAME_WIDTH / 2,
+    x,
 
-    60
+    y
 
   );
-
-
-  ctx.restore();
 
 }
 
@@ -1975,6 +2153,7 @@ function drawScore() {
 function drawGameMenuButton() {
 
   ctx.save();
+
 
   ctx.imageSmoothingEnabled =
     false;
@@ -1999,8 +2178,10 @@ function drawGameMenuButton() {
   ctx.textBaseline =
     "middle";
 
+
   ctx.font =
     "bold 19px monospace";
+
 
   ctx.lineWidth = 4;
 
@@ -2044,7 +2225,216 @@ function drawGameMenuButton() {
 
 
 /* =========================================================
-   Bricks
+   Game Over
+========================================================= */
+
+function drawGameOver() {
+
+  drawMenuBackground();
+
+
+  drawResultTitle(
+    "GAME OVER",
+    "#c74d36"
+  );
+
+
+  drawResultScore();
+
+
+  drawButton(
+
+    RESULT_RETRY_BUTTON.x,
+    RESULT_RETRY_BUTTON.y,
+
+    RESULT_RETRY_BUTTON.width,
+    RESULT_RETRY_BUTTON.height,
+
+    "RETRY"
+
+  );
+
+
+  drawButton(
+
+    RESULT_MENU_BUTTON.x,
+    RESULT_MENU_BUTTON.y,
+
+    RESULT_MENU_BUTTON.width,
+    RESULT_MENU_BUTTON.height,
+
+    "MENU"
+
+  );
+
+}
+
+
+/* =========================================================
+   Stage Clear
+========================================================= */
+
+function drawStageClear() {
+
+  drawMenuBackground();
+
+
+  drawResultTitle(
+    "STAGE CLEAR",
+    "#d99432"
+  );
+
+
+  drawResultScore();
+
+
+  drawButton(
+
+    RESULT_RETRY_BUTTON.x,
+    RESULT_RETRY_BUTTON.y,
+
+    RESULT_RETRY_BUTTON.width,
+    RESULT_RETRY_BUTTON.height,
+
+    "RETRY"
+
+  );
+
+
+  drawButton(
+
+    RESULT_MENU_BUTTON.x,
+    RESULT_MENU_BUTTON.y,
+
+    RESULT_MENU_BUTTON.width,
+    RESULT_MENU_BUTTON.height,
+
+    "MENU"
+
+  );
+
+}
+
+
+/* =========================================================
+   Result Title
+========================================================= */
+
+function drawResultTitle(
+  text,
+  color
+) {
+
+  ctx.save();
+
+
+  ctx.textAlign =
+    "center";
+
+  ctx.textBaseline =
+    "middle";
+
+
+  ctx.font =
+    "bold 50px monospace";
+
+
+  ctx.lineWidth = 9;
+
+  ctx.strokeStyle =
+    "#17130e";
+
+
+  ctx.strokeText(
+
+    text,
+
+    GAME_WIDTH / 2,
+
+    280
+
+  );
+
+
+  ctx.fillStyle =
+    color;
+
+
+  ctx.fillText(
+
+    text,
+
+    GAME_WIDTH / 2,
+
+    280
+
+  );
+
+
+  ctx.restore();
+
+}
+
+
+/* =========================================================
+   Result Score
+========================================================= */
+
+function drawResultScore() {
+
+  ctx.save();
+
+
+  ctx.textAlign =
+    "center";
+
+  ctx.textBaseline =
+    "middle";
+
+
+  ctx.font =
+    "bold 34px monospace";
+
+
+  ctx.lineWidth = 6;
+
+  ctx.strokeStyle =
+    "#17130e";
+
+
+  ctx.strokeText(
+
+    `SCORE ${score}`,
+
+    GAME_WIDTH / 2,
+
+    470
+
+  );
+
+
+  ctx.fillStyle =
+    "#d99432";
+
+
+  ctx.fillText(
+
+    `SCORE ${score}`,
+
+    GAME_WIDTH / 2,
+
+    470
+
+  );
+
+
+  ctx.restore();
+
+}
+
+
+/* =========================================================
+   Draw Bricks
 ========================================================= */
 
 function drawBricks() {
@@ -2086,7 +2476,7 @@ function drawBricks() {
 
 
 /* =========================================================
-   Ball
+   Draw Ball
 ========================================================= */
 
 function drawBall() {
@@ -2111,7 +2501,7 @@ function drawBall() {
 
 
 /* =========================================================
-   Paddle
+   Draw Paddle
 ========================================================= */
 
 function drawPaddle() {
@@ -2136,7 +2526,7 @@ function drawPaddle() {
 
 
 /* =========================================================
-   Canvas Position
+   Canvas Coordinate
 ========================================================= */
 
 function getCanvasPosition(
@@ -2238,11 +2628,13 @@ function handleMenuClick(
   ) {
 
     if (
+
       !pointInRect(
         x,
         y,
         button
       )
+
     ) {
 
       continue;
@@ -2259,60 +2651,91 @@ function handleMenuClick(
     }
 
 
-    if (
-      button.action ===
-      "play"
+    switch (
+      button.action
     ) {
 
-      startNewGame();
+      case "play":
 
-      return;
+        startNewGame();
+
+        return;
+
+
+      case "continue":
+
+        continueGame();
+
+        return;
+
+
+      case "howToPlay":
+
+        appState =
+          STATE_HOW_TO_PLAY;
+
+        hoveredMenuButton =
+          -1;
+
+        return;
+
+
+      case "credits":
+
+        appState =
+          STATE_CREDITS;
+
+        hoveredMenuButton =
+          -1;
+
+        return;
 
     }
 
+  }
 
-    if (
-      button.action ===
-      "continue"
-    ) {
-
-      continueGame();
-
-      return;
-
-    }
+}
 
 
-    if (
-      button.action ===
-      "howToPlay"
-    ) {
+/* =========================================================
+   Result Click
+========================================================= */
 
-      appState =
-        STATE_HOW_TO_PLAY;
+function handleResultClick(
+  x,
+  y
+) {
 
-      hoveredMenuButton =
-        -1;
+  if (
 
-      return;
+    pointInRect(
+      x,
+      y,
+      RESULT_RETRY_BUTTON
+    )
 
-    }
+  ) {
+
+    startNewGame();
+
+    return;
+
+  }
 
 
-    if (
-      button.action ===
-      "credits"
-    ) {
+  if (
 
-      appState =
-        STATE_CREDITS;
+    pointInRect(
+      x,
+      y,
+      RESULT_MENU_BUTTON
+    )
 
-      hoveredMenuButton =
-        -1;
+  ) {
 
-      return;
+    canContinue = false;
 
-    }
+    returnToMenu();
 
   }
 
@@ -2440,6 +2863,30 @@ canvas.addEventListener(
 
 
     /* =====================================================
+       Result Screen
+    ===================================================== */
+
+    if (
+
+      appState ===
+      STATE_GAME_OVER ||
+
+      appState ===
+      STATE_CLEAR
+
+    ) {
+
+      handleResultClick(
+        position.x,
+        position.y
+      );
+
+      return;
+
+    }
+
+
+    /* =====================================================
        Gameplay
     ===================================================== */
 
@@ -2452,7 +2899,9 @@ canvas.addEventListener(
     }
 
 
-    /* Game Menu Button */
+    /*
+      Game Menu
+    */
 
     if (
 
@@ -2471,7 +2920,9 @@ canvas.addEventListener(
     }
 
 
-    /* Finger control must start below Y1120 */
+    /*
+      手指必須從控制區開始
+    */
 
     if (
 
@@ -2555,7 +3006,9 @@ canvas.addEventListener(
     }
 
 
-    /* Touch drag */
+    /*
+      Touch drag
+    */
 
     if (
 
@@ -2573,7 +3026,9 @@ canvas.addEventListener(
     }
 
 
-    /* PC Mouse */
+    /*
+      PC Mouse
+    */
 
     if (
 
@@ -2726,6 +3181,25 @@ window.addEventListener(
       STATE_CREDITS
 
     ) {
+
+      returnToMenu();
+
+      return;
+
+    }
+
+
+    if (
+
+      appState ===
+      STATE_GAME_OVER ||
+
+      appState ===
+      STATE_CLEAR
+
+    ) {
+
+      canContinue = false;
 
       returnToMenu();
 
